@@ -1,0 +1,1305 @@
+# =============================================================================
+# ESPHome Configuration — WaveShare ESP32-S3 Touch LCD 3.5B (320×480 portrait)
+# Lights + Music (SpotifyPlus) + Climate panel with album art, background image,
+# screensaver and screen-sleep.
+#
+# GitHub-ready: all Home Assistant entity IDs, SpotifyPlus settings, playlist
+# URIs and behaviour settings are declared in the substitutions block below.
+# Edit ONLY that section to adapt this config for your own setup.
+# =============================================================================
+
+substitutions:
+
+  # ---------------------------------------------------------------------------
+  # Device identity
+  # ---------------------------------------------------------------------------
+  device_name:          "waveshare-esp32-s3-touch"
+  friendly_name:        "WaveShare ESP32-S3 Touch LCD 3.5B"
+  fallback_ap_ssid:     "Waveshare-ESP32-S3-3.5B Fallback"
+
+  # ---------------------------------------------------------------------------
+  # Home Assistant base URL
+  # Used to prefix relative album-art paths returned by the media player.
+  # Must NOT have a trailing slash.  e.g. "http://homeassistant.local:8123"
+  # ---------------------------------------------------------------------------
+  ha_base_url:  "http://homeassistant.local:8123"
+
+  # ---------------------------------------------------------------------------
+  # Background image
+  # Served from your HA /local/ folder (put background.jpg in www/).
+  # Set to "" or a 1×1 placeholder if you don't want a background.
+  # ---------------------------------------------------------------------------
+  background_image_url: "http://homeassistant.local:8123/local/background.jpg"
+
+  # ---------------------------------------------------------------------------
+  # Lights page — 4 light entity IDs and their button labels
+  # ---------------------------------------------------------------------------
+  light_1_entity:   "light.all_office_lights"
+  light_1_label:    "Office"
+
+  light_2_entity:   "light.jimmy_bedroom_lights"
+  light_2_label:    "Bedroom"
+
+  light_3_entity:   "light.ryans_bedroom"
+  light_3_label:    "Ryan's Room"
+
+  light_4_entity:   "light.hue_filament_bulb_1_2"
+  light_4_label:    "Landing"
+
+  # Label shown in the page header when the Lights tab is active
+  lights_page_title:  "Upstairs Lights"
+
+  # ---------------------------------------------------------------------------
+  # Climate
+  # ---------------------------------------------------------------------------
+  climate_entity:             "climate.thermostat_2"
+  climate_boost_sensor:       "binary_sensor.thermostat_2_boost"
+  climate_boost_automation:   "automation.thermostat_boost_toggle"
+
+  # ---------------------------------------------------------------------------
+  # SpotifyPlus media player
+  # ---------------------------------------------------------------------------
+  media_player_entity:    "media_player.spotifyplus_jimmy_white"
+
+  # SpotifyPlus device_id to target for playback (your Spotify Connect device name)
+  spotify_device_id:      "FALCON"
+
+  # ---------------------------------------------------------------------------
+  # Playlist buttons (6 × SpotifyPlus context_uri)
+  # ---------------------------------------------------------------------------
+  playlist_1_label:   "Favourites"
+  playlist_1_uri:     "spotify:playlist:1NY1ZsQPf1R8gwBQZx1jIG"
+
+  playlist_2_label:   "Chill Out"
+  playlist_2_uri:     "spotify:playlist:4530EUiHb3H3OVxaOGRIan"
+
+  playlist_3_label:   "80s"
+  playlist_3_uri:     "spotify:playlist:4CJaBASVuHNLT4XJ5l5Y3Y"
+
+  playlist_4_label:   "90s"
+  playlist_4_uri:     "spotify:playlist:37i9dQZF1EQn2GRFTFMl2A"
+
+  playlist_5_label:   "Coldplay"
+  playlist_5_uri:     "spotify:playlist:37i9dQZF1DXaQm3ZVg9Z2X"
+
+  playlist_6_label:   "Trip Hop"
+  playlist_6_uri:     "spotify:playlist:732Y3vA0pCj2In4F5aGXjQ"
+
+  # ---------------------------------------------------------------------------
+  # Screensaver / sleep timings
+  # ---------------------------------------------------------------------------
+  screensaver_timeout_s:   "60"     # idle seconds before screensaver activates
+  display_off_timeout_s:   "1800"   # idle seconds before backlight turns off
+  screensaver_brightness:  "25%"    # backlight level while screensaver is showing
+
+# =============================================================================
+# ESPHome core
+# =============================================================================
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  platformio_options:
+    upload_speed: 921600
+    board_build.flash_mode: dio
+    board_build.f_flash: 80000000L
+    board_build.f_cpu: 240000000L
+  on_boot:
+    priority: -100
+    then:
+      - lvgl.page.show: page_lights
+      # Trigger background image download shortly after boot
+      - delay: 5s
+      - component.update: bg_image
+      # Sync button colours once HA connection is established
+      - delay: 10s
+      - lambda: |-
+          if (id(light_1).has_state()) {
+            lv_label_set_text(id(light1_status), id(light_1).state ? "ON" : "OFF");
+            lv_obj_set_style_bg_color(id(light1_btn), lv_color_hex(id(light_1).state ? 0xFFC107 : 0x1A237E), 0);
+          }
+          if (id(light_2).has_state()) {
+            lv_label_set_text(id(light2_status), id(light_2).state ? "ON" : "OFF");
+            lv_obj_set_style_bg_color(id(light2_btn), lv_color_hex(id(light_2).state ? 0xFFC107 : 0x1A237E), 0);
+          }
+          if (id(light_3).has_state()) {
+            lv_label_set_text(id(light3_status), id(light_3).state ? "ON" : "OFF");
+            lv_obj_set_style_bg_color(id(light3_btn), lv_color_hex(id(light_3).state ? 0xFFC107 : 0x1A237E), 0);
+          }
+          if (id(light_4).has_state()) {
+            lv_label_set_text(id(light4_status), id(light_4).state ? "ON" : "OFF");
+            lv_obj_set_style_bg_color(id(light4_btn), lv_color_hex(id(light_4).state ? 0xFFC107 : 0x1A237E), 0);
+          }
+
+# =============================================================================
+# Hardware — ESP32-S3
+# =============================================================================
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240: "y"
+      CONFIG_ESP32S3_DATA_CACHE_64KB: "y"
+      CONFIG_ESP32S3_DATA_CACHE_LINE_64B: "y"
+      CONFIG_SPIRAM_FETCH_INSTRUCTIONS: y
+      CONFIG_SPIRAM_RODATA: y
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+logger:
+  baud_rate: 921600
+  logs:
+    component: WARN
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: ${fallback_ap_ssid}
+    password: !secret fallback_ap_password
+
+captive_portal:
+
+# -----------------------------------------------------------------------------
+# WaveShare 3.5B — QSPI display + AXS15231 capacitive touch
+# -----------------------------------------------------------------------------
+spi:
+  id: display_qspi
+  type: quad
+  clk_pin: 47
+  data_pins: [21, 48, 40, 39]
+
+i2c:
+  sda: 4
+  scl: 8
+  id: touchscreen_bus
+  frequency: 400kHz
+
+output:
+  - platform: ledc
+    pin: GPIO1
+    id: backlight_pwm
+
+light:
+  - platform: monochromatic
+    output: backlight_pwm
+    name: "Display Backlight"
+    id: backlight
+    restore_mode: ALWAYS_ON
+
+display:
+  - platform: qspi_dbi
+    model: axs15231
+    data_rate: 40MHz
+    id: my_display
+    spi_id: display_qspi
+    dimensions:
+      height: 480
+      width: 320
+    cs_pin: 45
+    rotation: 0
+    auto_clear_enabled: false
+
+touchscreen:
+  - platform: axs15231
+    id: my_touch
+    display: my_display
+    i2c_id: touchscreen_bus
+    interrupt_pin: 3
+
+# =============================================================================
+# HTTP & Images
+# =============================================================================
+http_request:
+  verify_ssl: false
+
+online_image:
+  # ---------------------------------------------------------------------------
+  # Background image — downloaded once at boot, pushed to all three pages.
+  # Place background.jpg (320×480) in your HA www/ folder.
+  # ---------------------------------------------------------------------------
+  - id: bg_image
+    url: ${background_image_url}
+    format: JPEG
+    resize: 320x480
+    type: RGB565
+    update_interval: never
+    on_download_finished:
+      - lvgl.image.update:
+          id: bg_image_lights
+          src: bg_image
+      - delay: 500ms
+      - lvgl.image.update:
+          id: bg_image_music
+          src: bg_image
+      - delay: 500ms
+      - lvgl.image.update:
+          id: bg_image_climate
+          src: bg_image
+
+  # ---------------------------------------------------------------------------
+  # Album art — updated whenever the media player reports a new track.
+  # ---------------------------------------------------------------------------
+  - id: album_art_img
+    url: "https://via.placeholder.com/320x320.jpg"
+    format: JPEG
+    resize: 320x320
+    type: RGB565
+    update_interval: never
+    on_download_finished:
+      - lvgl.image.update:
+          id: music_bg_image
+          src: album_art_img
+
+# =============================================================================
+# Globals
+# =============================================================================
+globals:
+  - id: screensaver_active
+    type: bool
+    initial_value: "false"
+  - id: last_page
+    type: int
+    initial_value: "0"
+
+# =============================================================================
+# Time
+# =============================================================================
+time:
+  - platform: homeassistant
+    id: ha_time
+
+# =============================================================================
+# Sensors — subscribe to HA entities
+# =============================================================================
+sensor:
+  - platform: homeassistant
+    id: thermostat_current_temp
+    entity_id: ${climate_entity}
+    attribute: current_temperature
+    on_value:
+      then:
+        - lambda: |-
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%.1f\xC2\xB0""C", x);
+            lv_label_set_text(id(current_temp_label), buf);
+
+  - platform: homeassistant
+    id: thermostat_target_temp
+    entity_id: ${climate_entity}
+    attribute: temperature
+    on_value:
+      then:
+        - lambda: |-
+            char buf[32];
+            snprintf(buf, sizeof(buf), "Target: %.1f\xC2\xB0""C", x);
+            lv_label_set_text(id(target_temp_label), buf);
+
+text_sensor:
+  - platform: homeassistant
+    id: thermostat_mode
+    entity_id: ${climate_entity}
+    attribute: hvac_action
+    on_value:
+      then:
+        - lambda: |-
+            char buf[64];
+            snprintf(buf, sizeof(buf), "Mode: %s", x.c_str());
+            lv_label_set_text(id(mode_label), buf);
+
+  - platform: homeassistant
+    id: media_state
+    entity_id: ${media_player_entity}
+    on_value:
+      then:
+        - lambda: |-
+            lv_label_set_text(id(music_state_label), x == "playing" ? "Now Playing" : "Stopped");
+            lv_label_set_text(id(music_play_label), x == "playing" ? "\U000F03E4" : "\U000F040A");
+
+  - platform: homeassistant
+    id: media_title
+    entity_id: ${media_player_entity}
+    attribute: media_title
+    on_value:
+      then:
+        - lambda: lv_label_set_text(id(music_title_label), x.c_str());
+
+  - platform: homeassistant
+    id: media_artist
+    entity_id: ${media_player_entity}
+    attribute: media_artist
+    on_value:
+      then:
+        - lambda: lv_label_set_text(id(music_artist_label), x.c_str());
+
+  - platform: homeassistant
+    id: media_picture
+    entity_id: ${media_player_entity}
+    attribute: entity_picture
+    on_value:
+      then:
+        # Prefix relative paths with the HA base URL
+        - online_image.set_url:
+            id: album_art_img
+            url: !lambda |-
+              std::string url = x;
+              if (url.length() > 0 && url.find("http") != 0) {
+                url = "${ha_base_url}" + url;
+              }
+              return url;
+        - component.update: album_art_img
+
+# =============================================================================
+# Binary Sensors — light states, boost indicator, mute state
+# =============================================================================
+binary_sensor:
+  - platform: homeassistant
+    id: light_1
+    entity_id: ${light_1_entity}
+    on_state:
+      then:
+        - lambda: |-
+            lv_label_set_text(id(light1_status), x ? "ON" : "OFF");
+            lv_obj_set_style_bg_color(id(light1_btn), lv_color_hex(x ? 0xFFC107 : 0x1A237E), 0);
+
+  - platform: homeassistant
+    id: light_2
+    entity_id: ${light_2_entity}
+    on_state:
+      then:
+        - lambda: |-
+            lv_label_set_text(id(light2_status), x ? "ON" : "OFF");
+            lv_obj_set_style_bg_color(id(light2_btn), lv_color_hex(x ? 0xFFC107 : 0x1A237E), 0);
+
+  - platform: homeassistant
+    id: light_3
+    entity_id: ${light_3_entity}
+    on_state:
+      then:
+        - lambda: |-
+            lv_label_set_text(id(light3_status), x ? "ON" : "OFF");
+            lv_obj_set_style_bg_color(id(light3_btn), lv_color_hex(x ? 0xFFC107 : 0x1A237E), 0);
+
+  - platform: homeassistant
+    id: light_4
+    entity_id: ${light_4_entity}
+    on_state:
+      then:
+        - lambda: |-
+            lv_label_set_text(id(light4_status), x ? "ON" : "OFF");
+            lv_obj_set_style_bg_color(id(light4_btn), lv_color_hex(x ? 0xFFC107 : 0x1A237E), 0);
+
+  - platform: homeassistant
+    id: thermostat_boost
+    entity_id: ${climate_boost_sensor}
+    on_state:
+      then:
+        - lambda: |-
+            lv_obj_set_style_bg_color(id(boost_btn),
+              lv_color_hex(x ? 0xFF6F00 : 0x1A237E), 0);
+
+  - platform: homeassistant
+    id: media_muted
+    entity_id: ${media_player_entity}
+    attribute: is_volume_muted
+    on_state:
+      then:
+        - lambda: |-
+            lv_obj_set_style_bg_color(id(mute_btn),
+              lv_color_hex(x ? 0xB71C1C : 0x1A237E), 0);
+
+# =============================================================================
+# Interval — screensaver / display-sleep logic
+# =============================================================================
+interval:
+  - interval: 1s
+    then:
+      # Update screensaver clock every second
+      - if:
+          condition:
+            lambda: "return id(screensaver_active);"
+          then:
+            - lambda: |-
+                auto t = id(ha_time).now();
+                if (t.is_valid()) {
+                  char buf[16];
+                  snprintf(buf, sizeof(buf), "%02d:%02d", t.hour, t.minute);
+                  lv_label_set_text(id(screensaver_clock), buf);
+                }
+
+      # Turn display off after display_off_timeout_s of no touch
+      - if:
+          condition:
+            and:
+              - lvgl.is_idle:
+                  timeout: ${display_off_timeout_s}s
+              - light.is_on: backlight
+          then:
+            - light.turn_off: backlight
+
+      # Activate screensaver after screensaver_timeout_s of no touch
+      - if:
+          condition:
+            and:
+              - lambda: "return !id(screensaver_active);"
+              - lvgl.is_idle:
+                  timeout: ${screensaver_timeout_s}s
+          then:
+            - globals.set:
+                id: screensaver_active
+                value: "true"
+            - lambda: |-
+                auto t = id(ha_time).now();
+                if (t.is_valid()) {
+                  char buf[16];
+                  snprintf(buf, sizeof(buf), "%02d:%02d", t.hour, t.minute);
+                  lv_label_set_text(id(screensaver_clock), buf);
+                }
+            - lvgl.widget.hide: header_bar
+            - lvgl.widget.hide: nav_bar
+            - light.turn_on:
+                id: backlight
+                brightness: ${screensaver_brightness}
+                transition_length: 2s
+            - lvgl.page.show: page_screensaver
+
+# =============================================================================
+# LVGL  (portrait 320×480)
+#   Header      y=0–44    (top_layer)
+#   Content     y=44–436
+#   Nav bar     y=436–480 (top_layer)
+#
+# Each content page begins with a full-bleed background image widget
+# (bg_image_*) placed at x=0, y=44.  The image is transparent until the
+# online_image download completes, so the dark bg_color shows first.
+# =============================================================================
+lvgl:
+  draw_rounding: 8
+  displays: my_display
+  touchscreens: my_touch
+  bg_color: 0x0A0E1A
+  border_width: 0
+  outline_width: 0
+  default_font: font_sm
+
+  top_layer:
+    widgets:
+
+      # ── Header ─────────────────────────────────────────────────────────────
+      - obj:
+          id: header_bar
+          x: 0
+          y: 0
+          width: 320
+          height: 44
+          bg_color: 0x1A237E
+          bg_opa: 80%
+          border_width: 0
+          radius: 0
+          pad_all: 0
+          widgets:
+            - label:
+                id: header_title
+                x: 8
+                y: 14
+                text: ${lights_page_title}
+                text_font: font_med
+                text_color: 0xFFFFFF
+
+      # ── Bottom nav bar ─────────────────────────────────────────────────────
+      - obj:
+          id: nav_bar
+          x: 0
+          y: 436
+          width: 320
+          height: 44
+          bg_color: 0x0D1226
+          bg_opa: 80%
+          border_width: 0
+          radius: 0
+          pad_all: 0
+          widgets:
+            - button:
+                id: nav_lights_btn
+                x: 0
+                y: 0
+                width: 106
+                height: 44
+                bg_color: 0x283593
+                radius: 0
+                border_width: 0
+                widgets:
+                  - label:
+                      text: "Lights"
+                      text_font: font_sm
+                      text_color: 0xFFFFFF
+                      align: CENTER
+                on_click:
+                  - globals.set:
+                      id: last_page
+                      value: "0"
+                  - lambda: |-
+                      lv_label_set_text(id(header_title), "${lights_page_title}");
+                      lv_obj_set_style_bg_color(id(nav_lights_btn),  lv_color_hex(0x283593), 0);
+                      lv_obj_set_style_bg_color(id(nav_music_btn),   lv_color_hex(0x1A237E), 0);
+                      lv_obj_set_style_bg_color(id(nav_climate_btn), lv_color_hex(0x1A237E), 0);
+                  - lvgl.page.show: page_lights
+
+            - button:
+                id: nav_music_btn
+                x: 107
+                y: 0
+                width: 106
+                height: 44
+                bg_color: 0x1A237E
+                radius: 0
+                border_width: 0
+                widgets:
+                  - label:
+                      text: "Music"
+                      text_font: font_sm
+                      text_color: 0xFFFFFF
+                      align: CENTER
+                on_click:
+                  - globals.set:
+                      id: last_page
+                      value: "1"
+                  - lambda: |-
+                      lv_label_set_text(id(header_title), "Music");
+                      lv_obj_set_style_bg_color(id(nav_lights_btn),  lv_color_hex(0x1A237E), 0);
+                      lv_obj_set_style_bg_color(id(nav_music_btn),   lv_color_hex(0x283593), 0);
+                      lv_obj_set_style_bg_color(id(nav_climate_btn), lv_color_hex(0x1A237E), 0);
+                  - lvgl.page.show: page_music
+
+            - button:
+                id: nav_climate_btn
+                x: 214
+                y: 0
+                width: 106
+                height: 44
+                bg_color: 0x1A237E
+                radius: 0
+                border_width: 0
+                widgets:
+                  - label:
+                      text: "Climate"
+                      text_font: font_sm
+                      text_color: 0xFFFFFF
+                      align: CENTER
+                on_click:
+                  - globals.set:
+                      id: last_page
+                      value: "2"
+                  - lambda: |-
+                      lv_label_set_text(id(header_title), "Climate");
+                      lv_obj_set_style_bg_color(id(nav_lights_btn),  lv_color_hex(0x1A237E), 0);
+                      lv_obj_set_style_bg_color(id(nav_music_btn),   lv_color_hex(0x1A237E), 0);
+                      lv_obj_set_style_bg_color(id(nav_climate_btn), lv_color_hex(0x283593), 0);
+                  - lvgl.page.show: page_climate
+
+  pages:
+
+    # =========================================================================
+    # LIGHTS PAGE — background + 2×2 grid + All Off strip
+    # =========================================================================
+    - id: page_lights
+      bg_color: 0x0A0E1A
+      widgets:
+
+        # Full-bleed background image (covers content area y=44–436)
+        - image:
+            id: bg_image_lights
+            src: bg_image
+            x: 0
+            y: 44
+
+        - button:
+            id: light1_btn
+            x: 8
+            y: 52
+            width: 148
+            height: 88
+            bg_color: 0x1A237E
+            bg_opa: 80%
+            radius: 10
+            widgets:
+              - label:
+                  text: ${light_1_label}
+                  align: CENTER
+                  y: -14
+                  text_font: font_med
+                  text_color: 0xFFFFFF
+              - label:
+                  id: light1_status
+                  text: "OFF"
+                  align: CENTER
+                  y: 14
+                  text_font: font_sm
+                  text_color: 0xFFFFFF
+            on_click:
+              - homeassistant.action:
+                  action: light.toggle
+                  data:
+                    entity_id: ${light_1_entity}
+
+        - button:
+            id: light2_btn
+            x: 164
+            y: 52
+            width: 148
+            height: 88
+            bg_color: 0x1A237E
+            bg_opa: 80%
+            radius: 10
+            widgets:
+              - label:
+                  text: ${light_2_label}
+                  align: CENTER
+                  y: -14
+                  text_font: font_med
+                  text_color: 0xFFFFFF
+              - label:
+                  id: light2_status
+                  text: "OFF"
+                  align: CENTER
+                  y: 14
+                  text_font: font_sm
+                  text_color: 0xFFFFFF
+            on_click:
+              - homeassistant.action:
+                  action: light.toggle
+                  data:
+                    entity_id: ${light_2_entity}
+
+        - button:
+            id: light3_btn
+            x: 8
+            y: 150
+            width: 148
+            height: 88
+            bg_color: 0x1A237E
+            bg_opa: 80%
+            radius: 10
+            widgets:
+              - label:
+                  text: ${light_3_label}
+                  align: CENTER
+                  y: -14
+                  text_font: font_sm
+                  text_color: 0xFFFFFF
+              - label:
+                  id: light3_status
+                  text: "OFF"
+                  align: CENTER
+                  y: 14
+                  text_font: font_sm
+                  text_color: 0xFFFFFF
+            on_click:
+              - homeassistant.action:
+                  action: light.toggle
+                  data:
+                    entity_id: ${light_3_entity}
+
+        - button:
+            id: light4_btn
+            x: 164
+            y: 150
+            width: 148
+            height: 88
+            bg_color: 0x1A237E
+            bg_opa: 80%
+            radius: 10
+            widgets:
+              - label:
+                  text: ${light_4_label}
+                  align: CENTER
+                  y: -14
+                  text_font: font_med
+                  text_color: 0xFFFFFF
+              - label:
+                  id: light4_status
+                  text: "OFF"
+                  align: CENTER
+                  y: 14
+                  text_font: font_sm
+                  text_color: 0xFFFFFF
+            on_click:
+              - homeassistant.action:
+                  action: light.toggle
+                  data:
+                    entity_id: ${light_4_entity}
+
+        - button:
+            x: 8
+            y: 252
+            width: 304
+            height: 52
+            bg_color: 0x37474F
+            bg_opa: 80%
+            radius: 10
+            widgets:
+              - label:
+                  text: "All Off"
+                  align: CENTER
+                  text_font: font_med
+                  text_color: 0xFFFFFF
+            on_click:
+              - homeassistant.action:
+                  action: light.turn_off
+                  data:
+                    entity_id: ${light_1_entity}
+              - homeassistant.action:
+                  action: light.turn_off
+                  data:
+                    entity_id: ${light_2_entity}
+              - homeassistant.action:
+                  action: light.turn_off
+                  data:
+                    entity_id: ${light_3_entity}
+              - homeassistant.action:
+                  action: light.turn_off
+                  data:
+                    entity_id: ${light_4_entity}
+
+    # =========================================================================
+    # MUSIC PAGE — background + album art banner + controls + playlists
+    # =========================================================================
+    - id: page_music
+      bg_color: 0x0A0E1A
+      widgets:
+
+        # Full-bleed background image
+        - image:
+            id: bg_image_music
+            src: bg_image
+            x: 0
+            y: 44
+
+        # Letterbox album art banner — 80px tall strip showing the centre crop
+        - obj:
+            x: 0
+            y: 44
+            width: 320
+            height: 80
+            bg_color: 0x000000
+            bg_opa: 0%
+            border_width: 0
+            radius: 0
+            pad_all: 0
+            widgets:
+              # The 320×320 image is offset upward so the middle band shows
+              - image:
+                  id: music_bg_image
+                  src: album_art_img
+                  x: 0
+                  y: -120
+              # Dark overlay for text legibility over the album art
+              - obj:
+                  x: 0
+                  y: 0
+                  width: 320
+                  height: 80
+                  bg_color: 0x000000
+                  bg_opa: 50%
+                  border_width: 0
+                  radius: 0
+
+        # Now Playing / Stopped state
+        - label:
+            id: music_state_label
+            x: 8
+            y: 52
+            text: "Stopped"
+            text_font: font_sm
+            text_color: 0xAAAAAA
+
+        - label:
+            id: music_title_label
+            x: 8
+            y: 70
+            width: 304
+            text: "No media"
+            text_font: font_med
+            text_color: 0xFFFFFF
+            long_mode: DOT
+
+        - label:
+            id: music_artist_label
+            x: 8
+            y: 94
+            width: 304
+            text: ""
+            text_font: font_sm
+            text_color: 0xAAAAAA
+            long_mode: DOT
+
+        # ── Transport row ──────────────────────────────────────────────────
+        - button:
+            x: 8
+            y: 124
+            width: 96
+            height: 52
+            bg_color: 0x1A237E
+            bg_opa: 80%
+            radius: 8
+            widgets:
+              - label:
+                  text: "\U000F04AE"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+                  align: CENTER
+            on_click:
+              - homeassistant.action:
+                  action: media_player.media_previous_track
+                  data:
+                    entity_id: ${media_player_entity}
+
+        - button:
+            x: 112
+            y: 124
+            width: 96
+            height: 52
+            bg_color: 0x4CAF50
+            bg_opa: 80%
+            radius: 8
+            widgets:
+              - label:
+                  id: music_play_label
+                  text: "\U000F040A"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+                  align: CENTER
+            on_click:
+              - homeassistant.action:
+                  action: media_player.media_play_pause
+                  data:
+                    entity_id: ${media_player_entity}
+
+        - button:
+            x: 216
+            y: 124
+            width: 96
+            height: 52
+            bg_color: 0x1A237E
+            bg_opa: 80%
+            radius: 8
+            widgets:
+              - label:
+                  text: "\U000F04AD"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+                  align: CENTER
+            on_click:
+              - homeassistant.action:
+                  action: media_player.media_next_track
+                  data:
+                    entity_id: ${media_player_entity}
+
+        # ── Volume row ─────────────────────────────────────────────────────
+        - button:
+            x: 8
+            y: 184
+            width: 96
+            height: 52
+            bg_color: 0x1A237E
+            bg_opa: 80%
+            radius: 8
+            widgets:
+              - label:
+                  text: "\U000F075E"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+                  align: CENTER
+            on_click:
+              - homeassistant.action:
+                  action: media_player.volume_down
+                  data:
+                    entity_id: ${media_player_entity}
+
+        - button:
+            id: mute_btn
+            x: 112
+            y: 184
+            width: 96
+            height: 52
+            bg_color: 0x1A237E
+            bg_opa: 80%
+            radius: 8
+            widgets:
+              - label:
+                  text: "\U000F0581"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+                  align: CENTER
+            on_click:
+              - homeassistant.action:
+                  action: media_player.volume_mute
+                  data:
+                    entity_id: ${media_player_entity}
+                  data_template:
+                    is_volume_muted: "{{ not state_attr('${media_player_entity}', 'is_volume_muted') }}"
+
+        - button:
+            x: 216
+            y: 184
+            width: 96
+            height: 52
+            bg_color: 0x1A237E
+            bg_opa: 80%
+            radius: 8
+            widgets:
+              - label:
+                  text: "\U000F075D"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+                  align: CENTER
+            on_click:
+              - homeassistant.action:
+                  action: media_player.volume_up
+                  data:
+                    entity_id: ${media_player_entity}
+
+        # ── Playlist rows (SpotifyPlus) ────────────────────────────────────
+        - button:
+            x: 8
+            y: 246
+            width: 148
+            height: 44
+            bg_color: 0x1A237E
+            bg_opa: 80%
+            radius: 6
+            widgets:
+              - label:
+                  text: ${playlist_1_label}
+                  text_font: font_sm
+                  text_color: 0xFFFFFF
+                  align: LEFT_MID
+                  x: 8
+            on_click:
+              - homeassistant.action:
+                  action: spotifyplus.player_media_play_context
+                  data:
+                    entity_id: ${media_player_entity}
+                    context_uri: ${playlist_1_uri}
+                    device_id: ${spotify_device_id}
+
+        - button:
+            x: 164
+            y: 246
+            width: 148
+            height: 44
+            bg_color: 0x1A237E
+            bg_opa: 80%
+            radius: 6
+            widgets:
+              - label:
+                  text: ${playlist_2_label}
+                  text_font: font_sm
+                  text_color: 0xFFFFFF
+                  align: LEFT_MID
+                  x: 8
+            on_click:
+              - homeassistant.action:
+                  action: spotifyplus.player_media_play_context
+                  data:
+                    entity_id: ${media_player_entity}
+                    context_uri: ${playlist_2_uri}
+                    device_id: ${spotify_device_id}
+
+        - button:
+            x: 8
+            y: 300
+            width: 148
+            height: 44
+            bg_color: 0x1A237E
+            bg_opa: 80%
+            radius: 6
+            widgets:
+              - label:
+                  text: ${playlist_3_label}
+                  text_font: font_sm
+                  text_color: 0xFFFFFF
+                  align: LEFT_MID
+                  x: 8
+            on_click:
+              - homeassistant.action:
+                  action: spotifyplus.player_media_play_context
+                  data:
+                    entity_id: ${media_player_entity}
+                    context_uri: ${playlist_3_uri}
+                    device_id: ${spotify_device_id}
+
+        - button:
+            x: 164
+            y: 300
+            width: 148
+            height: 44
+            bg_color: 0x1A237E
+            bg_opa: 80%
+            radius: 6
+            widgets:
+              - label:
+                  text: ${playlist_4_label}
+                  text_font: font_sm
+                  text_color: 0xFFFFFF
+                  align: LEFT_MID
+                  x: 8
+            on_click:
+              - homeassistant.action:
+                  action: spotifyplus.player_media_play_context
+                  data:
+                    entity_id: ${media_player_entity}
+                    context_uri: ${playlist_4_uri}
+                    device_id: ${spotify_device_id}
+
+        - button:
+            x: 8
+            y: 354
+            width: 148
+            height: 44
+            bg_color: 0x1A237E
+            bg_opa: 80%
+            radius: 6
+            widgets:
+              - label:
+                  text: ${playlist_5_label}
+                  text_font: font_sm
+                  text_color: 0xFFFFFF
+                  align: LEFT_MID
+                  x: 8
+            on_click:
+              - homeassistant.action:
+                  action: spotifyplus.player_media_play_context
+                  data:
+                    entity_id: ${media_player_entity}
+                    context_uri: ${playlist_5_uri}
+                    device_id: ${spotify_device_id}
+
+        - button:
+            x: 164
+            y: 354
+            width: 148
+            height: 44
+            bg_color: 0x1A237E
+            bg_opa: 80%
+            radius: 6
+            widgets:
+              - label:
+                  text: ${playlist_6_label}
+                  text_font: font_sm
+                  text_color: 0xFFFFFF
+                  align: LEFT_MID
+                  x: 8
+            on_click:
+              - homeassistant.action:
+                  action: spotifyplus.player_media_play_context
+                  data:
+                    entity_id: ${media_player_entity}
+                    context_uri: ${playlist_6_uri}
+                    device_id: ${spotify_device_id}
+
+    # =========================================================================
+    # CLIMATE PAGE — background + temp display + controls
+    # =========================================================================
+    - id: page_climate
+      bg_color: 0x0A0E1A
+      widgets:
+
+        # Full-bleed background image
+        - image:
+            id: bg_image_climate
+            src: bg_image
+            x: 0
+            y: 44
+
+        - button:
+            id: boost_btn
+            x: 260
+            y: 52
+            width: 52
+            height: 44
+            bg_color: 0x1A237E
+            bg_opa: 80%
+            radius: 8
+            widgets:
+              - label:
+                  text: "\U000F0238"
+                  text_font: font_icon
+                  text_color: 0xFFFFFF
+                  align: CENTER
+            on_click:
+              - homeassistant.action:
+                  action: automation.trigger
+                  data:
+                    entity_id: ${climate_boost_automation}
+
+        - label:
+            id: current_temp_label
+            align: CENTER
+            y: -90
+            text_font: font_xl
+            text_color: 0xFFFFFF
+            text: "--°C"
+
+        - label:
+            text: "Current"
+            align: CENTER
+            y: -44
+            text_font: font_sm
+            text_color: 0xCCCCCC
+
+        - label:
+            id: target_temp_label
+            align: CENTER
+            y: -8
+            text_font: font_med
+            text_color: 0xFFFFFF
+            text: "Target: --°C"
+
+        - label:
+            id: mode_label
+            align: CENTER
+            y: 24
+            text_font: font_sm
+            text_color: 0xCCCCCC
+            text: "Mode: --"
+
+        - button:
+            x: 8
+            y: 316
+            width: 140
+            height: 80
+            bg_color: 0x2196F3
+            bg_opa: 80%
+            radius: 10
+            widgets:
+              - label:
+                  text: "-"
+                  text_font: font_xl
+                  text_color: 0xFFFFFF
+                  align: CENTER
+            on_click:
+              - homeassistant.action:
+                  action: climate.set_temperature
+                  data:
+                    entity_id: ${climate_entity}
+                  data_template:
+                    temperature: !lambda |-
+                      return to_string(id(thermostat_target_temp).state - 0.5);
+
+        - button:
+            x: 172
+            y: 316
+            width: 140
+            height: 80
+            bg_color: 0xF44336
+            bg_opa: 80%
+            radius: 10
+            widgets:
+              - label:
+                  text: "+"
+                  text_font: font_xl
+                  text_color: 0xFFFFFF
+                  align: CENTER
+            on_click:
+              - homeassistant.action:
+                  action: climate.set_temperature
+                  data:
+                    entity_id: ${climate_entity}
+                  data_template:
+                    temperature: !lambda |-
+                      return to_string(id(thermostat_target_temp).state + 0.5);
+
+    # =========================================================================
+    # SCREENSAVER — red clock, tap anywhere to wake
+    # =========================================================================
+    - id: page_screensaver
+      bg_color: 0x000000
+      widgets:
+
+        - label:
+            id: screensaver_clock
+            align: CENTER
+            text_font: font_clock
+            text_color: 0xFF3333
+            text: "00:00"
+
+        - obj:
+            x: 0
+            y: 0
+            width: 320
+            height: 480
+            bg_opa: 0%
+            border_width: 0
+            on_click:
+              - globals.set:
+                  id: screensaver_active
+                  value: "false"
+              - light.turn_on:
+                  id: backlight
+                  brightness: 100%
+              - lvgl.widget.show: header_bar
+              - lvgl.widget.show: nav_bar
+              - if:
+                  condition:
+                    lambda: "return id(last_page) == 0;"
+                  then:
+                    - lambda: lv_label_set_text(id(header_title), "${lights_page_title}");
+                    - lvgl.page.show: page_lights
+              - if:
+                  condition:
+                    lambda: "return id(last_page) == 1;"
+                  then:
+                    - lambda: lv_label_set_text(id(header_title), "Music");
+                    - lvgl.page.show: page_music
+              - if:
+                  condition:
+                    lambda: "return id(last_page) == 2;"
+                  then:
+                    - lambda: lv_label_set_text(id(header_title), "Climate");
+                    - lvgl.page.show: page_climate
+
+# =============================================================================
+# Fonts  (downloaded at build time — no local files needed)
+# =============================================================================
+font:
+  - file: "gfonts://Roboto"
+    id: font_sm
+    size: 14
+  - file: "gfonts://Roboto"
+    id: font_med
+    size: 18
+  - file: "gfonts://Roboto"
+    id: font_lg
+    size: 22
+  - file: "gfonts://Roboto"
+    id: font_xl
+    size: 48
+  - file: "gfonts://Roboto"
+    id: font_clock
+    size: 96
+    glyphs: "0123456789:"
+  - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/master/fonts/materialdesignicons-webfont.ttf"
+    id: font_icon
+    size: 24
+    glyphs:
+      - "\U000F04AE"   # skip-previous
+      - "\U000F040A"   # play
+      - "\U000F03E4"   # pause
+      - "\U000F04AD"   # skip-next
+      - "\U000F075E"   # volume-minus
+      - "\U000F0581"   # volume-mute
+      - "\U000F075D"   # volume-plus
+      - "\U000F0238"   # fire (boost)
