@@ -2,8 +2,7 @@
 
 ESPHome configurations for ESP32-S3 touchscreen displays running a Home Assistant control panel with **climate**, **music** (Spotify), and **lighting** pages — plus screensaver and auto-sleep.
 
-![Panel Overview](images/panel_overview.jpg)
-<!-- Replace with a photo/screenshot of your panel in action -->
+
 
 ## Features
 
